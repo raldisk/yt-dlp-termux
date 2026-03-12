@@ -1,0 +1,38 @@
+# yt-dlp runtime files
+*.part
+*.ytdl
+*.temp
+
+# Download archives — these are personal and should not be committed
+crabs-arkayb.txt
+crabs-batchfile.txt
+*-arkayb.txt
+*-batchfile.txt
+custom.txt
+
+# Cookies — NEVER commit cookies to a public repository
+*.txt
+!README.md
+
+# Output directories
+Termux-Extension-Archive/
+Laptop-Extension-Archive/
+
+# yt-dlp cache
+.cache/
+ytdlp-cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Editor
+.vscode/
+*.swp
+*.swo
+
+
+*.tar.gz
+*.sha256
