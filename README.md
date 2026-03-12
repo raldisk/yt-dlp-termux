@@ -536,6 +536,12 @@ chmod +x ~/storage/shared/Github/ytdlp-run.sh
 
 ## Credits and Attribution
 
+### Inspired by scrape-youtube-termux
+
+This project would not exist in its current form without [inotia00](https://github.com/inotia00)'s **[scrape-youtube-termux](https://github.com/inotia00/scrape-youtube-termux)** — the original proof of concept that demonstrated YouTube downloading via yt-dlp inside Termux on Android. The core idea of running yt-dlp within a Termux environment, including the proot-based architecture for handling JavaScript dependencies, traces directly back to that work. This repository builds on that foundation by extending it with the bgutil POT provider, a hardened yt-dlp config, and an automation wrapper suited for long-running downloads.
+
+---
+
 This repository is a **configuration and automation guide**, not a fork or redistribution of any upstream tool. All scripts and config files are original work authored by [raldisk](https://github.com/raldisk) and released under the MIT License. The following projects make this entire setup possible and deserve direct acknowledgment.
 
 ---
