@@ -21,11 +21,14 @@
 8. [Build bgutil HTTP Server Inside Alpine](#8-build-bgutil-http-server-inside-alpine)
 9. [Verify the HTTP Server](#9-verify-the-http-server)
 10. [Configure yt-dlp](#10-configure-yt-dlp)
-11. [Automation Script — ytdlp-run.sh](#11-automation-script--ytdlp-runsh)
-12. [Updating Everything](#12-updating-everything)
-13. [Known Errors and Fixes](#13-known-errors-and-fixes)
-14. [Runtime Status Summary](#14-runtime-status-summary)
-15. [Architecture Overview](#15-architecture-overview)
+11. [Automated Setup — install.sh](#11-automated-setup--installsh)
+12. [Automation Script — ytdlp-run.sh](#12-automation-script--ytdlp-runsh)
+13. [bgutil Auto-Start on Launch — bgutil-autostart.sh](#13-bgutil-auto-start-on-launch--bgutil-autostartsh)
+14. [Config Variants](#14-config-variants)
+15. [Updating Everything](#15-updating-everything)
+16. [Known Errors and Fixes](#16-known-errors-and-fixes)
+17. [Runtime Status Summary](#17-runtime-status-summary)
+18. [Architecture Overview](#18-architecture-overview)
 
 ---
 
@@ -313,35 +316,104 @@ To use script mode (no server needed, Node.js only):
 
 ---
 
-## 11. Automation Script — ytdlp-run.sh
+## 11. Automated Setup — install.sh
 
-`ytdlp-run.sh` eliminates the need to manually manage two Termux sessions. It handles the full server lifecycle automatically:
+`install.sh` runs the entire setup sequence from a fresh Termux environment in a single command. It covers all nine stages: package update, storage access, core packages, Deno, Python packages, Alpine proot, bgutil server build, config placement, and script permissions.
 
-1. Acquires an Android wakelock to prevent process termination during long downloads
-2. Starts the bgutil HTTP server inside Alpine proot as a background process
-3. Waits up to 30 seconds for port 4416 to become responsive
-4. Runs yt-dlp with your config
-5. Kills the bgutil server cleanly on exit
-6. Releases the wakelock
+Every step is **idempotent** — it checks whether it has already been completed before running, so re-executing the script on a partially-configured device is safe and will not re-clone or re-install anything already present.
 
 **Usage:**
+
+```bash
+chmod +x ~/storage/shared/Github/yt-dlp-termux/install.sh
+~/storage/shared/Github/yt-dlp-termux/install.sh
+```
+
+After the script completes, it prints a summary of next steps: placing your cookies file, running the server smoke test, and optionally setting up bgutil auto-start via `bgutil-autostart.sh`.
+
+> **Note:** `install.sh` must be run from within the cloned `yt-dlp-termux/` directory so the relative paths to config files and scripts resolve correctly.
+
+---
+
+## 12. Automation Script — ytdlp-run.sh
+
+`ytdlp-run.sh` manages the full bgutil server lifecycle automatically so you never need to handle two Termux sessions manually. When invoked **without arguments**, it presents an interactive menu. When invoked **with a URL**, it runs a direct single-video download using `termux-solo.conf`.
+
+**Interactive menu:**
+
+```
+  yt-dlp Termux Runner
+  ─────────────────────────────────────────
+  1) Single video   (termux-solo.conf)
+  2) Playlist       (termux-playlist.conf)
+  3) Batch file     (edit batchfile.txt → run)
+  4) Audio only     (termux-audio.conf)
+  ─────────────────────────────────────────
+  Select [1-4]:
+```
+
+Selecting **option 3** opens `batchfile.txt` in `nano`. Add one URL per line, save with `Ctrl+O`, exit with `Ctrl+X`. The script counts non-empty lines and asks for confirmation before starting the server and running the batch.
+
+**Direct URL mode (bypasses menu):**
 
 ```bash
 chmod +x ~/storage/shared/Github/ytdlp-run.sh
 ~/storage/shared/Github/ytdlp-run.sh "https://www.youtube.com/watch?v=VIDEOID"
 ```
 
-The script passes all arguments directly to yt-dlp, so any flags that would normally follow `yt-dlp` can be appended:
+In both modes the script follows the same lifecycle: acquire wake lock → start bgutil server → poll port 4416 for up to 30 seconds → run yt-dlp → kill server → release wake lock. A `trap` on `EXIT` ensures the server is always shut down cleanly even if yt-dlp fails mid-download.
 
-```bash
-~/storage/shared/Github/ytdlp-run.sh -f bestvideo+bestaudio "URL"
-```
-
-> **Important:** `ytdlp-run.sh` relies on HTTP mode being active in `termux-solo.conf`. Ensure the `bgutilhttp` line is uncommented and `bgutilscript` is commented out before using the wrapper.
+> **Important:** `ytdlp-run.sh` requires HTTP mode to be active in the config file being used. Ensure `--extractor-args "youtubepot-bgutilhttp:..."` is uncommented and the `bgutilscript` line is commented out.
 
 ---
 
-## 12. Updating Everything
+## 13. bgutil Auto-Start on Launch — bgutil-autostart.sh
+
+By default the bgutil HTTP server must be started manually before each download session. `bgutil-autostart.sh` is a **one-time installer** that eliminates this step by writing two persistent hooks.
+
+**Run once:**
+
+```bash
+chmod +x ~/storage/shared/Github/bgutil-autostart.sh
+~/storage/shared/Github/bgutil-autostart.sh
+```
+
+**What it installs:**
+
+A guard block is appended to `~/.bashrc` that checks whether the server is already responding on `:4416` before attempting to start a new instance — preventing duplicate processes if you open multiple Termux sessions. A `~/.termux/boot/start-bgutil.sh` script is written for users with the **Termux:Boot** app installed, which fires the server on device reboot.
+
+**To verify the server is running after a new session opens:**
+
+```bash
+curl http://127.0.0.1:4416
+# Expected: Cannot GET /
+```
+
+**Logs:** `/tmp/bgutil.log` for session starts, `/tmp/bgutil-boot.log` for boot starts.
+
+**To undo:** Remove the `# bgutil-autostart` block from `~/.bashrc` and delete `~/.termux/boot/start-bgutil.sh`.
+
+---
+
+## 14. Config Variants
+
+Three config files are provided under `config/`. Each is purpose-built for a specific download mode and shares the same POT provider, JS runtime, and error-handling settings as the base config.
+
+**`termux-solo.conf`** — Single video downloads. `--no-playlist` is active. Output is nested under `%(channel)s/%(title)s/`. This is the default config used by `ytdlp-run.sh` in direct URL mode and menu option 1.
+
+**`termux-playlist.conf`** — Full playlist or channel downloads. `--yes-playlist` is active. Output is nested under `%(channel)s/%(playlist)s/` with zero-padded index prefixes (`001.`, `002.`, ...). Uncomment `--playlist-items 1-50` in the file to restrict the range.
+
+**`termux-audio.conf`** — Audio-only downloads. Targets native `opus` streams directly — no transcoding or ffmpeg extraction required. Output is scoped to an `Audio/` subfolder with a simplified filename template that omits resolution and fps fields.
+
+Each config can be invoked manually with `--config-location` or selected automatically through the `ytdlp-run.sh` menu:
+
+```bash
+yt-dlp --config-location ~/storage/shared/Github/config/termux-playlist.conf "PLAYLIST_URL"
+```
+
+---
+
+## 15. Updating Everything
 
 **Update Termux packages:**
 ```bash
@@ -367,7 +439,7 @@ exit
 
 ---
 
-## 13. Known Errors and Fixes
+## 16. Known Errors and Fixes
 
 ### `bash: cd: /storage/emulated/0/Github: Permission denied`
 **Cause:** Direct access to `/storage/emulated/0/` is blocked by Android's sandbox.
@@ -454,7 +526,7 @@ If `generate_once.js` and `main.js` are present, no build step is needed.
 
 ---
 
-## 14. Runtime Status Summary
+## 17. Runtime Status Summary
 
 | Runtime | Status | Binary Path |
 |---------|--------|-------------|
@@ -466,7 +538,7 @@ If `generate_once.js` and `main.js` are present, no build step is needed.
 
 ---
 
-## 15. Architecture Overview
+## 18. Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────┐
