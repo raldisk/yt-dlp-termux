@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [2.0.0] — 2026-03-12
+## [2.0.1] — 2026-03-12
 
 Full implementation of all accepted items from the peer review action plan.
 29 items addressed across bugs, stale references, architecture, security, and enhancements.
@@ -68,7 +68,7 @@ polls port 4416, and reports pass or fail. Closes the gap between "packages
 installed" and "server actually starts and responds."
 
 **`README.md` — item 4.1: version-pinned install URLs**
-Published both a stable (`v2.0.0` tagged) and a development (`main`) install URL.
+Published both a stable (`v2.0.1` tagged) and a development (`main`) install URL.
 The stable URL ensures users can install a known-good version independently of
 ongoing main-branch commits.
 
