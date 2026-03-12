@@ -1,0 +1,42 @@
+# user.conf — personal yt-dlp-termux overrides
+# Location: ~/.config/yt-dlp-termux/config/user.conf
+#
+# This file is NEVER tracked by git. It is sourced after the base conf,
+# so any flag here overrides the corresponding base conf value.
+#
+# item 3.5: layered config system — place personal settings here, not in
+# termux-solo.conf or termux-playlist.conf. This keeps the base configs
+# clean for repo publishing and updates.
+#
+# HOW TO USE
+# 1. Copy this template: cp user.conf.template user.conf
+# 2. Uncomment and set the lines that apply to your setup.
+# 3. Never commit user.conf — it is in .gitignore.
+
+# ─── Cookies (for age-restricted or login-required content) ──────────────────
+# Export cookies from your browser using the yt-dlp cookies guide:
+# https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp
+#
+# --cookies /data/data/com.termux/files/home/storage/shared/cookies/your-cookies.txt
+# --cookies-from-browser chrome
+
+# ─── Download archive (skip already-downloaded videos) ───────────────────────
+# --download-archive /data/data/com.termux/files/home/storage/shared/archive.txt
+
+# ─── Batch file (list of URLs to download) ───────────────────────────────────
+# -a /data/data/com.termux/files/home/storage/shared/batchfile.txt
+
+# ─── Custom output directory ─────────────────────────────────────────────────
+# Uncomment to override the default Termux-Extension-Archive root.
+# --paths "/data/data/com.termux/files/home/storage/shared/Downloads"
+
+# ─── Proxy ───────────────────────────────────────────────────────────────────
+# --proxy socks5://127.0.0.1:1080
+
+# ─── Format override ─────────────────────────────────────────────────────────
+# Override the base conf format string if you want AV1 or VP9.
+# -f "bv[vcodec^=av01]+ba/bv+ba/best"
+
+# ─── Concurrent downloads ────────────────────────────────────────────────────
+# Raise if your mobile connection is stable. Default is 4.
+# -N 8

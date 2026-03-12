@@ -1,34 +1,27 @@
-# yt-dlp runtime files
+# yt-dlp-termux .gitignore
+
+# Personal config — never commit
+config/user.conf
+
+# Generated checksum (regenerated on each install)
+install.sh.sha256
+
+# yt-dlp runtime artifacts
 *.part
 *.ytdl
-*.temp
+*.temp.*
 
-# Download archives — these are personal and should not be committed
-crabs-arkayb.txt
-crabs-batchfile.txt
-*-arkayb.txt
-*-batchfile.txt
-custom.txt
+# Cookie files
+cookies/
+*.cookies.txt
 
-# Cookies — NEVER commit cookies to a public repository
-*.txt
-!README.md
+# Logs
+*.log
 
-# Output directories
-Termux-Extension-Archive/
-Laptop-Extension-Archive/
+# macOS
+.DS_Store
 
-# yt-dlp cache
-.cache/
-ytdlp-cache/
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.env
-
-# Editor
+# Editors
 .vscode/
 *.swp
-*.swo
+*~

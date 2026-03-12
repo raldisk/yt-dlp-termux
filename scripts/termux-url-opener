@@ -1,0 +1,26 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# termux-url-opener — Android share-menu integration
+# Triggered when a URL is shared to Termux from Chrome or any other app.
+# Item 5.1: zero-typing download — share URL from browser, download starts.
+#
+# Install location: ~/bin/termux-url-opener
+# Managed by: yt-dlp-termux install.sh (item 4.3: backs up existing opener)
+# yt-dlp-termux managed
+
+set -euo pipefail
+
+URL="${1:-}"
+[[ -z "$URL" ]] && exit 0
+
+# Resolve yt-termux from ~/bin or fall back to config dir
+if command -v yt-termux &>/dev/null; then
+    exec yt-termux "$URL"
+else
+    RUNNER="${XDG_CONFIG_HOME:-$HOME/.config}/yt-dlp-termux/scripts/ytdlp-run.sh"
+    if [[ -f "$RUNNER" ]]; then
+        exec bash "$RUNNER" "$URL"
+    else
+        echo "[!] yt-dlp-termux not found. Run install.sh first." >&2
+        exit 1
+    fi
+fi

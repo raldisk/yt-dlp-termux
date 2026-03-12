@@ -1,253 +1,279 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# install.sh — full idempotent setup for yt-dlp on Termux
+# install.sh — yt-dlp-termux installer
+# https://github.com/raldisk/yt-dlp-termux
 #
-# Covers the entire install sequence from the README:
-#   Section 2  — Termux initial setup (pkg update/upgrade)
-#   Section 3  — Storage access grant
-#   Section 4  — Core packages
-#   Section 5  — JS runtimes (Deno)
-#   Section 6  — Python packages (yt-dlp, streamlink, FixupMtime)
-#   Section 7  — Alpine Linux via proot-distro
-#   Section 8  — bgutil HTTP server build inside Alpine
-#   Section 10 — Config and script placement
-#   Section 11 — Script permissions
-#
-# Idempotent: every step checks whether it has already been completed
-# before running. Re-running on a partially-configured system is safe.
-#
-# Usage:
-#   chmod +x install.sh && ./install.sh
+# Items implemented:
+#   1.1  curl|bash self-bootstrapping via BASH_SOURCE[0] detection
+#   3.2  Configs installed to XDG-compliant ~/.config/yt-dlp-termux/
+#   3.3  ytdlp-run.sh symlinked to ~/bin/yt-termux
+#   3.5  user.conf.template deployed on first install
+#   3.6  proot-distro + bgutil smoke test at end of install
+#   4.1  Version-pinned install URL published in README (enforced by git tag)
+#   4.3  termux-url-opener backed up before overwrite
+#   5.1  termux-url-opener installed to ~/bin/ (optional, prompted)
 
 set -euo pipefail
 
-GITHUB_DIR="$HOME/storage/shared/Github"
+# ─── item 1.1: curl|bash self-bootstrapping ──────────────────────────────────
+# When piped through bash, BASH_SOURCE[0] is empty — dirname returns "." which
+# resolves to the user's CWD, not the repo. Detect the pipe case, clone the
+# repo, then exec a proper file execution so BASH_SOURCE[0] is populated.
+REPO_URL="https://github.com/raldisk/yt-dlp-termux.git"
+REPO_BRANCH="${YTDLPT_BRANCH:-main}"
+CLONE_DIR="${HOME}/storage/shared/Github/yt-dlp-termux"
+
+if [[ -z "${BASH_SOURCE[0]:-}" ]] || [[ "${BASH_SOURCE[0]}" == "bash" ]]; then
+    echo "[*] Running via curl pipe — cloning repo first..."
+    # Termux storage must be set up for ~/storage/shared to exist
+    if [[ ! -d "${HOME}/storage/shared" ]]; then
+        echo "[*] Setting up Termux storage access..."
+        termux-setup-storage
+        sleep 2
+    fi
+    mkdir -p "$(dirname "$CLONE_DIR")"
+    [[ -d "$CLONE_DIR" ]] && rm -rf "$CLONE_DIR"
+    git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$CLONE_DIR"
+    exec bash "$CLONE_DIR/install.sh" "${@}"
+fi
+
+# ─── From this point: running as a proper file execution ─────────────────────
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ============================================
-# HELPERS
-# ============================================
-step() { echo ""; echo "────────────────────────────────────────"; echo "[STEP] $1"; echo "────────────────────────────────────────"; }
-ok()   { echo "[OK]  $1"; }
-skip() { echo "[--]  $1 — already done, skipping."; }
-warn() { echo "[!!]  $1"; }
+# ─── Source shared library (may not exist yet on fresh install) ───────────────
+LIB="${REPO_DIR}/lib/common.sh"
+[[ -f "$LIB" ]] && source "$LIB" || {
+    log()   { echo -e "\e[34m[*]\e[0m $*"; }
+    ok()    { echo -e "\e[32m[✓]\e[0m $*"; }
+    warn()  { echo -e "\e[33m[!]\e[0m $*" >&2; }
+    error() { echo -e "\e[31m[✗]\e[0m $*" >&2; }
+    die()   { error "$*"; exit 1; }
+}
 
-command_exists() { command -v "$1" &>/dev/null; }
+# ─── Install destinations (item 3.2) ─────────────────────────────────────────
+INSTALL_BASE="${XDG_CONFIG_HOME:-$HOME/.config}/yt-dlp-termux"
+INSTALL_CONFIG="${INSTALL_BASE}/config"
+INSTALL_SCRIPTS="${INSTALL_BASE}/scripts"
+INSTALL_LIB="${INSTALL_BASE}/lib"
+BIN_DIR="${HOME}/bin"
 
-# ============================================
-# STEP 1 — pkg update and upgrade
-# ============================================
-step "1/9 — Termux package update and upgrade"
-echo "    Updating package index and upgrading installed packages."
-echo "    If prompted about openssl.cnf, press N to keep your current version."
+VERSION="$(git -C "$REPO_DIR" describe --tags --always 2>/dev/null || echo 'dev')"
+
 echo ""
-pkg update -y && pkg upgrade -y
-ok "Package index updated."
+echo "╔════════════════════════════════════════╗"
+echo "║      yt-dlp-termux installer           ║"
+echo "║      version: ${VERSION}               "
+echo "╚════════════════════════════════════════╝"
+echo ""
 
-# ============================================
-# STEP 2 — Storage access
-# ============================================
-step "2/9 — Storage access"
-if [[ -d "$HOME/storage/shared" ]]; then
-    skip "~/storage/shared already exists"
-else
-    echo "    Requesting storage permission. Accept the Android dialog."
+# ─── Section 1: Termux environment check ─────────────────────────────────────
+log "Section 1: Checking Termux environment..."
+command -v termux-setup-storage &>/dev/null \
+    || die "Not running in Termux. This installer is Termux-only."
+
+if [[ ! -d "${HOME}/storage/shared" ]]; then
+    log "Setting up Termux storage access..."
     termux-setup-storage
-    ok "Storage access granted."
+    sleep 2
 fi
+ok "Termux environment OK."
 
-# ============================================
-# STEP 3 — Core packages
-# ============================================
-step "3/9 — Core packages"
-PACKAGES=(git python python-pip nodejs quickjs ffmpeg proot-distro libxml2 libxslt)
-MISSING=()
+# ─── Section 2: Package installation ─────────────────────────────────────────
+log "Section 2: Installing Termux packages..."
 
-for pkg in "${PACKAGES[@]}"; do
-    if dpkg -s "$pkg" &>/dev/null; then
-        skip "$pkg"
-    else
-        MISSING+=("$pkg")
+PKGS=(git python python-pip nodejs quickjs ffmpeg proot-distro libxml2 libxslt curl)
+MISSING_PKGS=()
+
+for pkg in "${PKGS[@]}"; do
+    if ! dpkg -s "$pkg" &>/dev/null; then
+        MISSING_PKGS+=("$pkg")
     fi
 done
 
-if [[ ${#MISSING[@]} -gt 0 ]]; then
-    echo "    Installing: ${MISSING[*]}"
-    pkg install -y "${MISSING[@]}"
-    ok "Core packages installed."
-else
-    ok "All core packages already present."
+if [[ ${#MISSING_PKGS[@]} -gt 0 ]]; then
+    log "Installing: ${MISSING_PKGS[*]}"
+    pkg install -y "${MISSING_PKGS[@]}"
 fi
+ok "Termux packages installed."
 
-# Verify ffmpeg
-if command_exists ffmpeg; then
-    ok "ffmpeg is functional."
-else
-    warn "ffmpeg not found in PATH after install. Try: pkg install ffmpeg"
-fi
+# ─── Section 3: Python packages ──────────────────────────────────────────────
+log "Section 3: Installing Python packages..."
+pip install -U --break-system-packages \
+    yt-dlp \
+    streamlink \
+    "https://github.com/bradenhilton/yt-dlp-FixupMtime/archive/master.zip"
+ok "Python packages installed."
 
-# ============================================
-# STEP 4 — Deno
-# ============================================
-step "4/9 — Deno JS runtime"
-if command_exists deno; then
-    skip "Deno already installed at $(command -v deno)"
-else
-    echo "    Installing Deno via curl script..."
-    curl -fsSL https://deno.land/install.sh | sh
-
-    # Write PATH entries to ~/.bashrc if not already there
-    if ! grep -q 'DENO_INSTALL' "$HOME/.bashrc" 2>/dev/null; then
-        echo 'export DENO_INSTALL="$HOME/.deno"' >> "$HOME/.bashrc"
-        echo 'export PATH="$DENO_INSTALL/bin:$PATH"' >> "$HOME/.bashrc"
-    fi
-
-    export DENO_INSTALL="$HOME/.deno"
-    export PATH="$DENO_INSTALL/bin:$PATH"
-    ok "Deno installed."
-fi
-
-# ============================================
-# STEP 5 — Python packages
-# ============================================
-step "5/9 — Python packages (yt-dlp, streamlink, FixupMtime)"
-
-if python3 -m pip show yt-dlp &>/dev/null; then
-    skip "yt-dlp already installed (pip)"
-    echo "    Upgrading yt-dlp to latest..."
-    pip install -U yt-dlp --break-system-packages -q
-    ok "yt-dlp upgraded."
-else
-    echo "    Installing yt-dlp..."
-    pip install -U yt-dlp --break-system-packages
-    ok "yt-dlp installed."
-fi
-
-if python3 -m pip show streamlink &>/dev/null; then
-    skip "streamlink already installed"
-else
-    echo "    Installing streamlink..."
-    pip install streamlink --break-system-packages
-    ok "streamlink installed."
-fi
-
-if python3 -m pip show yt-dlp-FixupMtime &>/dev/null; then
-    skip "yt-dlp-FixupMtime already installed"
-else
-    echo "    Installing yt-dlp-FixupMtime..."
-    pip install https://github.com/bradenhilton/yt-dlp-FixupMtime/archive/master.zip --break-system-packages
-    ok "yt-dlp-FixupMtime installed."
-fi
-
-# ============================================
-# STEP 6 — Alpine Linux via proot-distro
-# ============================================
-step "6/9 — Alpine Linux (proot-distro)"
-if proot-distro list 2>/dev/null | grep -q "alpine.*installed"; then
-    skip "Alpine already installed"
-else
-    echo "    Installing Alpine (~3-5 MB download)..."
+# ─── Section 4: Alpine proot setup ───────────────────────────────────────────
+log "Section 4: Setting up Alpine proot..."
+if ! proot-distro list | grep -q "alpine.*installed"; then
+    log "Installing Alpine Linux via proot-distro..."
     proot-distro install alpine
-    ok "Alpine installed."
 fi
+ok "Alpine proot ready."
 
-# ============================================
-# STEP 7 — bgutil server build inside Alpine
-# ============================================
-step "7/9 — bgutil HTTP server (inside Alpine proot)"
+# ─── Section 5: bgutil-ytdlp-pot-provider ────────────────────────────────────
+log "Section 5: Setting up bgutil POT provider..."
+BGUTIL_DIR="/root/bgutil-ytdlp-pot-provider"
 
-# Check if bgutil is already built by testing for main.js
-BGUTIL_MAIN="/root/bgutil-ytdlp-pot-provider/server/build/main.js"
-if proot-distro login alpine -- test -f "$BGUTIL_MAIN" 2>/dev/null; then
-    skip "bgutil server already built at $BGUTIL_MAIN"
-else
-    echo "    Installing Alpine build dependencies..."
-    proot-distro login alpine -- apk update
-    proot-distro login alpine -- apk add --no-cache \
-        deno nodejs npm git pkgconfig \
-        pixman-dev cairo-dev pango-dev \
-        libjpeg-turbo-dev giflib-dev
+proot-distro login alpine -- bash -c "
+    set -e
+    # Install Alpine deps
+    apk update -q
+    apk add -q deno nodejs npm git pkgconfig pixman-dev cairo-dev pango-dev libjpeg-turbo-dev giflib-dev 2>/dev/null || true
 
-    echo "    Cloning bgutil-ytdlp-pot-provider..."
-    proot-distro login alpine -- git clone \
-        https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git \
-        /root/bgutil-ytdlp-pot-provider
-
-    echo "    Running npm install (--ignore-scripts to avoid canvas build failure)..."
-    proot-distro login alpine -- sh -c \
-        "cd /root/bgutil-ytdlp-pot-provider/server && npm install --ignore-scripts"
-
-    # Verify build output
-    if proot-distro login alpine -- test -f "$BGUTIL_MAIN"; then
-        ok "bgutil server built successfully."
+    # Clone or update bgutil repo
+    if [[ -d '${BGUTIL_DIR}/.git' ]]; then
+        echo '[*] Updating bgutil repo...'
+        git -C '${BGUTIL_DIR}' pull --quiet
     else
-        warn "bgutil build may have failed — $BGUTIL_MAIN not found."
-        warn "See Section 8 and Section 13 of the README for manual steps."
+        echo '[*] Cloning bgutil repo...'
+        git clone --quiet https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git '${BGUTIL_DIR}'
     fi
-fi
 
-# ============================================
-# STEP 8 — Config and script placement
-# ============================================
-step "8/9 — Config and script placement"
-mkdir -p "$GITHUB_DIR/config"
+    # Install Node deps (--ignore-scripts: skips canvas native build, not needed at runtime)
+    cd '${BGUTIL_DIR}/server'
+    npm install --ignore-scripts --quiet
 
+    # Verify build artifacts exist
+    if [[ -f '${BGUTIL_DIR}/server/build/main.js' ]]; then
+        echo '[✓] bgutil build verified.'
+    else
+        echo '[✗] build/main.js not found — check repository state.' >&2
+        exit 1
+    fi
+"
+ok "bgutil POT provider ready."
+
+# ─── Section 6: Deno runtime check ───────────────────────────────────────────
+log "Section 6: Verifying Deno inside Alpine..."
+proot-distro login alpine -- deno --version &>/dev/null \
+    && ok "Deno OK inside Alpine." \
+    || warn "Deno not responsive inside Alpine — downloads may fail. Check Section 13 of README."
+
+# ─── Section 7: Deploy files (items 3.2, 3.3) ────────────────────────────────
+log "Section 7: Deploying files to ${INSTALL_BASE}..."
+mkdir -p "$INSTALL_CONFIG" "$INSTALL_SCRIPTS" "$INSTALL_LIB" "$BIN_DIR"
+
+# Configs
 for conf in termux-solo.conf termux-playlist.conf termux-audio.conf; do
-    DEST="$GITHUB_DIR/config/$conf"
-    SRC="$REPO_DIR/config/$conf"
-    if [[ -f "$DEST" ]]; then
-        skip "$conf already at $DEST"
-    elif [[ -f "$SRC" ]]; then
-        cp "$SRC" "$DEST"
-        ok "Copied $conf to $GITHUB_DIR/config/"
-    else
-        warn "Source $SRC not found — skipping $conf"
-    fi
+    cp "${REPO_DIR}/config/${conf}" "${INSTALL_CONFIG}/${conf}"
+    log "  config: ${conf}"
 done
 
-# ============================================
-# STEP 9 — Script permissions
-# ============================================
-step "9/9 — Script permissions"
+# user.conf template — only on first install, never overwrite personal config
+if [[ ! -f "${INSTALL_CONFIG}/user.conf" ]]; then
+    cp "${REPO_DIR}/config/user.conf.template" "${INSTALL_CONFIG}/user.conf"
+    log "  config: user.conf (from template — edit to add personal settings)"
+else
+    log "  config: user.conf already exists — not overwritten."
+fi
+
+# Scripts
 for script in ytdlp-run.sh bgutil-autostart.sh; do
-    DEST="$GITHUB_DIR/$script"
-    SRC="$REPO_DIR/scripts/$script"
-    if [[ -f "$DEST" ]]; then
-        chmod +x "$DEST"
-        ok "$script — permissions set on existing file"
-    elif [[ -f "$SRC" ]]; then
-        cp "$SRC" "$DEST"
-        chmod +x "$DEST"
-        ok "Copied and set permissions: $script"
-    else
-        warn "Source $SRC not found — skipping $script"
-    fi
+    cp "${REPO_DIR}/scripts/${script}" "${INSTALL_SCRIPTS}/${script}"
+    chmod +x "${INSTALL_SCRIPTS}/${script}"
+    log "  script: ${script}"
 done
 
-# ============================================
-# SUMMARY
-# ============================================
+# Shared library
+cp "${REPO_DIR}/lib/common.sh" "${INSTALL_LIB}/common.sh"
+log "  lib: common.sh"
+
+# item 3.3: symlink to ~/bin/ for PATH access
+ln -sf "${INSTALL_SCRIPTS}/ytdlp-run.sh" "${BIN_DIR}/yt-termux"
+ok "Symlink created: ~/bin/yt-termux → ytdlp-run.sh"
+
+# Ensure ~/bin is in PATH
+if ! echo "$PATH" | grep -q "${BIN_DIR}"; then
+    warn "~/bin is not in your PATH. Add this to ~/.bashrc:"
+    warn "  export PATH=\"\$HOME/bin:\$PATH\""
+fi
+
+# ─── Section 8: default.conf symlink (item 6.2) ──────────────────────────────
+log "Section 8: Creating default.conf symlink..."
+ln -sf "${INSTALL_CONFIG}/termux-solo.conf" "${INSTALL_CONFIG}/default.conf"
+ok "Symlink created: default.conf → termux-solo.conf"
+
+# ─── Section 9: termux-url-opener (items 4.3, 5.1) ───────────────────────────
+log "Section 9: termux-url-opener (Android share-menu integration)..."
 echo ""
-echo "════════════════════════════════════════════"
-echo "  Install complete."
-echo "════════════════════════════════════════════"
+read -rp "Install Android share-menu integration? (y/N): " _YN || _YN="n"
+if [[ "$_YN" =~ ^[Yy]$ ]]; then
+    _TARGET="${BIN_DIR}/termux-url-opener"
+    _BACKUP="${BIN_DIR}/termux-url-opener.backup.$(date +%s)"
+
+    # item 4.3: back up existing unmanaged opener before overwriting
+    if [[ -f "$_TARGET" ]] && ! grep -q "# yt-dlp-termux managed" "$_TARGET" 2>/dev/null; then
+        cp "$_TARGET" "$_BACKUP"
+        ok "Existing termux-url-opener backed up: ${_BACKUP}"
+    fi
+
+    cp "${REPO_DIR}/scripts/termux-url-opener" "$_TARGET"
+    chmod +x "$_TARGET"
+    ok "termux-url-opener installed. Share URLs from Chrome → Termux to download."
+else
+    log "Skipping termux-url-opener."
+fi
+
+# ─── Section 10: Termux:Boot autostart ───────────────────────────────────────
+log "Section 10: Termux:Boot autostart..."
+bash "${INSTALL_SCRIPTS}/bgutil-autostart.sh"
+
+# ─── Section 11: XDG state directory ─────────────────────────────────────────
+log "Section 11: Creating XDG state directory for logs..."
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/yt-dlp-termux"
+ok "Log directory: ${XDG_STATE_HOME:-$HOME/.local/state}/yt-dlp-termux/run.log"
+
+# ─── Section 12: SHA-256 checksum of install.sh (item 4.2) ───────────────────
+log "Section 12: Generating install.sh SHA-256 checksum..."
+CHECKSUM_FILE="${REPO_DIR}/install.sh.sha256"
+sha256sum "${REPO_DIR}/install.sh" | awk '{print $1}' > "$CHECKSUM_FILE"
+ok "Checksum written: install.sh.sha256 ($(cat "$CHECKSUM_FILE"))"
+
+# ─── Section 13: Smoke test (item 3.6) ───────────────────────────────────────
+log "Section 13: Running smoke test — starting bgutil server briefly..."
 echo ""
-echo "  Next steps:"
+_SMOKE_PID=
+_SMOKE_PASSED=false
+
+set -m
+proot-distro login alpine -- \
+    deno run -A /root/bgutil-ytdlp-pot-provider/server/build/main.js &
+_SMOKE_PID=$!
+set +m
+
+log "Waiting 8s for server to initialise..."
+sleep 8
+
+_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:4416" 2>/dev/null || true)
+kill -- -"${_SMOKE_PID}" 2>/dev/null || true
+wait "$_SMOKE_PID" 2>/dev/null || true
+
+if [[ "$_HTTP" == "200" || "$_HTTP" == "404" ]]; then
+    _SMOKE_PASSED=true
+    ok "Smoke test passed — bgutil server reachable (HTTP ${_HTTP})."
+else
+    warn "Smoke test inconclusive (HTTP: ${_HTTP:-none})."
+    warn "Manual check: proot-distro login alpine -- deno run -A /root/bgutil-ytdlp-pot-provider/server/build/main.js"
+    warn "Then in another terminal: curl http://127.0.0.1:4416"
+fi
+
+# ─── Done ─────────────────────────────────────────────────────────────────────
 echo ""
-echo "  1. Place your cookies.txt file in:"
-echo "     $GITHUB_DIR/"
-echo "     Then update --cookies in config/termux-solo.conf"
+echo "╔════════════════════════════════════════╗"
+echo "║         Installation complete          ║"
+echo "╚════════════════════════════════════════╝"
 echo ""
-echo "  2. Test the bgutil server manually:"
-echo "     proot-distro login alpine -- \\"
-echo "       deno run -A /root/bgutil-ytdlp-pot-provider/server/build/main.js &"
-echo "     sleep 10 && curl http://127.0.0.1:4416"
-echo "     Expected: 'Cannot GET /'"
+echo "  Usage:    yt-termux              (interactive menu)"
+echo "  Usage:    yt-termux <URL>        (direct download)"
+echo "  Config:   ${INSTALL_CONFIG}/"
+echo "  Personal: ${INSTALL_CONFIG}/user.conf"
+echo "  Logs:     ${XDG_STATE_HOME:-$HOME/.local/state}/yt-dlp-termux/run.log"
 echo ""
-echo "  3. Run the launcher:"
-echo "     $GITHUB_DIR/ytdlp-run.sh"
-echo ""
-echo "  4. Optionally set up bgutil auto-start:"
-echo "     $GITHUB_DIR/bgutil-autostart.sh"
-echo ""
-echo "  Full setup guide: README.md"
+if [[ "$_SMOKE_PASSED" == "true" ]]; then
+    ok "All systems go. Run: yt-termux"
+else
+    warn "Install complete but smoke test was inconclusive."
+    warn "See README Section 13 for manual verification steps."
+fi
 echo ""

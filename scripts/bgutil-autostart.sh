@@ -1,92 +1,48 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# bgutil-autostart.sh — one-time installer for bgutil auto-start on Termux launch
+# bgutil-autostart.sh — configures Termux:Boot autostart for bgutil HTTP server
 #
-# What this script does:
-#   1. Appends a background start hook to ~/.bashrc so bgutil starts
-#      automatically every time a new Termux session opens.
-#   2. Writes ~/.termux/boot/start-bgutil.sh for users with Termux:Boot
-#      installed, which fires the server on device reboot.
-#
-# Run once:
-#   chmod +x bgutil-autostart.sh && ./bgutil-autostart.sh
-#
-# To undo:
-#   Remove the bgutil block from ~/.bashrc manually.
-#   Delete ~/.termux/boot/start-bgutil.sh if present.
+# Items implemented:
+#   1.4  Termux:Boot detection now checks for BOOT_DIR existence, not
+#        termux-reload-settings (which ships with termux-tools on every instance)
 
 set -euo pipefail
 
-BGUTIL_CMD="proot-distro login alpine -- deno run -A /root/bgutil-ytdlp-pot-provider/server/build/main.js"
-BOOT_DIR="$HOME/.termux/boot"
-BOOT_SCRIPT="$BOOT_DIR/start-bgutil.sh"
-BASHRC="$HOME/.bashrc"
-MARKER="# bgutil-autostart"
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_COMMON="${_SCRIPT_DIR}/../lib/common.sh"
+[[ -f "$_COMMON" ]] || _COMMON="${XDG_CONFIG_HOME:-$HOME/.config}/yt-dlp-termux/lib/common.sh"
+[[ -f "$_COMMON" ]] && source "$_COMMON" || {
+    log()  { echo "[*] $*"; }
+    warn() { echo "[!] $*" >&2; }
+    error(){ echo "[✗] $*" >&2; }
+    die()  { error "$*"; exit 1; }
+}
 
-echo "[*] bgutil-autostart.sh — one-time installer"
-echo ""
+BOOT_DIR="${HOME}/.termux/boot"
+BOOT_SCRIPT="${BOOT_DIR}/start-bgutil.sh"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/yt-dlp-termux"
 
-# ============================================
-# STEP 1 — ~/.bashrc hook
-# ============================================
-if grep -q "$MARKER" "$BASHRC" 2>/dev/null; then
-    echo "[=] ~/.bashrc hook already present. Skipping."
-else
-    echo "[*] Writing ~/.bashrc hook..."
-    cat >> "$BASHRC" << EOF
-
-$MARKER — added by bgutil-autostart.sh
-# Starts the bgutil HTTP server in the background when a Termux session opens.
-# The server runs on http://127.0.0.1:4416 inside Alpine proot via Deno.
-if ! curl -s http://127.0.0.1:4416 > /dev/null 2>&1; then
-    echo "[bgutil] Starting server in background..."
-    $BGUTIL_CMD > /tmp/bgutil.log 2>&1 &
-    disown
-fi
-EOF
-    echo "[+] ~/.bashrc hook written."
-fi
-
-# ============================================
-# STEP 2 — Termux:Boot script
-# ============================================
-if [[ -d "$BOOT_DIR" ]] || command -v termux-reload-settings &>/dev/null; then
-    mkdir -p "$BOOT_DIR"
-
-    if [[ -f "$BOOT_SCRIPT" ]]; then
-        echo "[=] Termux:Boot script already present at $BOOT_SCRIPT. Skipping."
-    else
-        echo "[*] Writing Termux:Boot script..."
-        cat > "$BOOT_SCRIPT" << EOF
-#!/data/data/com.termux/files/usr/bin/bash
-# start-bgutil.sh — fires on device reboot via Termux:Boot
+BGUTIL_START_CONTENT='#!/data/data/com.termux/files/usr/bin/bash
+# Termux:Boot autostart — bgutil HTTP server
+# Managed by yt-dlp-termux bgutil-autostart.sh
 termux-wake-lock
-$BGUTIL_CMD > /tmp/bgutil-boot.log 2>&1 &
-disown
-EOF
-        chmod +x "$BOOT_SCRIPT"
-        echo "[+] Termux:Boot script written to $BOOT_SCRIPT."
-    fi
-else
-    echo "[~] Termux:Boot directory not found."
-    echo "    If you have the Termux:Boot app installed, create it manually:"
-    echo "    mkdir -p ~/.termux/boot"
-    echo "    Then re-run this script."
-fi
+proot-distro login alpine -- \
+    deno run -A \
+    /root/bgutil-ytdlp-pot-provider/server/build/main.js \
+    >> "${XDG_STATE_HOME:-$HOME/.local/state}/yt-dlp-termux/bgutil-boot.log" 2>&1 &
+'
 
-# ============================================
-# DONE
-# ============================================
-echo ""
-echo "[*] Installation complete."
-echo ""
-echo "    The bgutil server will now start automatically:"
-echo "    - On every new Termux session (via ~/.bashrc)"
-if [[ -f "$BOOT_SCRIPT" ]]; then
-echo "    - On device reboot (via Termux:Boot)"
+# item 1.4: use directory existence — the only reliable signal that
+# Termux:Boot is installed. termux-reload-settings ships with termux-tools
+# on every Termux instance, making it a false positive as a detection method.
+if [[ -d "$BOOT_DIR" ]]; then
+    log "Termux:Boot directory found — installing autostart script..."
+    mkdir -p "$BOOT_DIR"
+    printf '%s' "$BGUTIL_START_CONTENT" > "$BOOT_SCRIPT"
+    chmod +x "$BOOT_SCRIPT"
+    log "Autostart installed: ${BOOT_SCRIPT}"
+    log "bgutil server will start automatically on device boot."
+else
+    log "Termux:Boot directory not found — skipping autostart setup."
+    log "To enable: install Termux:Boot from F-Droid, open it once,"
+    log "then re-run this script. The boot directory will be created."
 fi
-echo ""
-echo "    To verify the server is running:"
-echo "    curl http://127.0.0.1:4416"
-echo "    Expected response: 'Cannot GET /' (server alive)"
-echo ""
-echo "    Logs: /tmp/bgutil.log (session) and /tmp/bgutil-boot.log (boot)"

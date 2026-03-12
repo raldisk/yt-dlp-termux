@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shell-lint:
+    name: Shell script syntax and lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: bash -n syntax check (all shell scripts)
+        run: |
+          find . -name "*.sh" -o -name "termux-url-opener" | while read -r f; do
+            echo "Checking: $f"
+            bash -n "$f" || exit 1
+          done
+
+      - name: shellcheck (all shell scripts)
+        run: |
+          find . -name "*.sh" -o -name "termux-url-opener" | while read -r f; do
+            echo "shellcheck: $f"
+            # SC1091: allow sourced files not present in CI environment
+            # SC2148: shebangs use Termux paths, not /bin/bash
+            shellcheck --exclude=SC1091,SC2148 "$f" || exit 1
+          done
+
+  config-checks:
+    name: Config file validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for chaannel_url typo (item 1.6)
+        run: |
+          if grep -r "chaannel_url" config/; then
+            echo "ERROR: chaannel_url typo found — should be channel_url"
+            exit 1
+          fi
+          echo "OK: channel_url field correct"
+
+      - name: Check for duplicate --fixup never (item 1.5)
+        run: |
+          for conf in config/*.conf; do
+            count=$(grep -c "^--fixup never" "$conf" 2>/dev/null || true)
+            if (( count > 1 )); then
+              echo "ERROR: --fixup never appears ${count} times in ${conf}"
+              exit 1
+            fi
+          done
+          echo "OK: --fixup never appears at most once per conf"
+
+      - name: Check personal references are commented out (item 2.1)
+        run: |
+          PERSONAL_REFS=("marcophoenix.txt" "crabs-arkayb.txt" "crabs-batchfile.txt")
+          for ref in "${PERSONAL_REFS[@]}"; do
+            if grep -rE "^[^#].*${ref}" config/; then
+              echo "ERROR: Personal reference '${ref}' is active (uncommented) in a tracked config"
+              exit 1
+            fi
+          done
+          echo "OK: All personal references are commented out"
+
+  secret-scan:
+    name: Secret pattern scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for secret patterns
+        run: |
+          # Check for common secret patterns in tracked files
+          PATTERNS=(
+            "password\s*="
+            "api[_-]?key\s*="
+            "secret\s*="
+            "token\s*="
+            "BEGIN RSA PRIVATE"
+            "BEGIN OPENSSH PRIVATE"
+          )
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            if git grep -iE "$pattern" -- \
+                ':(exclude)*.md' \
+                ':(exclude)*.conf' \
+                ':(exclude)user.conf*' \
+                2>/dev/null; then
+              echo "WARNING: Possible secret pattern found: $pattern"
+              FOUND=1
+            fi
+          done
+          if (( FOUND == 1 )); then
+            echo "Review the above matches — false positives possible."
+          else
+            echo "OK: No secret patterns detected."
+          fi
+
+  checksum:
+    name: Verify install.sh SHA-256 integrity
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check install.sh.sha256 is current
+        run: |
+          if [[ -f "install.sh.sha256" ]]; then
+            EXPECTED=$(cat install.sh.sha256)
+            ACTUAL=$(sha256sum install.sh | awk '{print $1}')
+            if [[ "$EXPECTED" != "$ACTUAL" ]]; then
+              echo "ERROR: install.sh.sha256 is stale."
+              echo "  Stored : $EXPECTED"
+              echo "  Actual : $ACTUAL"
+              echo "Re-run install.sh to regenerate the checksum."
+              exit 1
+            fi
+            echo "OK: install.sh checksum matches install.sh.sha256"
+          else
+            echo "SKIP: install.sh.sha256 not present — will be generated on first install."
+          fi
