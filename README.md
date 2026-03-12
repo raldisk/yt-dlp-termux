@@ -94,6 +94,16 @@ pkg install git python python-pip nodejs quickjs ffmpeg proot-distro libxml2 lib
 - `proot-distro` — run a full Linux distribution (Alpine) inside Termux
 - `libxml2` + `libxslt` — required to compile `lxml` for `streamlink`
 
+**Verify FFmpeg installed correctly:**
+
+```bash
+ffmpeg
+```
+
+A successful install prints FFmpeg's version header and build configuration to the terminal. No arguments are needed — the default output confirms the binary is functional.
+
+> **Note on cookies:** The recommended workflow is to export cookies from a desktop browser on your PC (using a browser extension such as *Get cookies.txt LOCALLY*), then transfer the resulting `cookies.txt` file directly to your yt-dlp working directory in Termux via USB or any file transfer method. This is more reliable than any on-device extraction approach.
+
 ---
 
 ## 5. Install JS Runtimes

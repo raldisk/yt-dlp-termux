@@ -32,7 +32,3 @@ __pycache__/
 .vscode/
 *.swp
 *.swo
-
-
-*.tar.gz
-*.sha256
