@@ -3,13 +3,12 @@
 #
 # Usage:
 #   ./ytdlp-run.sh             → interactive menu (no URL argument)
-#   ./ytdlp-run.sh "URL"       → direct single-video download (solo config)
+#   ./ytdlp-run.sh "URL"       → direct download (solo config, video+audio → MKV)
 #
 # Menu options:
-#   1) Single video  — termux-solo.conf
-#   2) Playlist      — termux-playlist.conf
-#   3) Batch file    — opens batchfile.txt in nano, then runs after confirm
-#   4) Audio only    — termux-audio.conf
+#   1) Video + Audio (MKV) — termux-solo.conf
+#   2) Playlist            — termux-playlist.conf
+#   3) Batch file          — opens batchfile.txt in nano, then runs after confirm
 
 set -euo pipefail
 
@@ -19,7 +18,6 @@ set -euo pipefail
 GITHUB_DIR="$HOME/storage/shared/Github"
 CONFIG_SOLO="$GITHUB_DIR/config/termux-solo.conf"
 CONFIG_PLAYLIST="$GITHUB_DIR/config/termux-playlist.conf"
-CONFIG_AUDIO="$GITHUB_DIR/config/termux-audio.conf"
 BATCHFILE="$GITHUB_DIR/batchfile.txt"
 PORT=4416
 BGUTIL_CMD="proot-distro login alpine -- deno run -A /root/bgutil-ytdlp-pot-provider/server/build/main.js"
@@ -78,12 +76,11 @@ fi
 echo ""
 echo "  yt-dlp Termux Runner"
 echo "  ─────────────────────────────────────────"
-echo "  1) Single video   (termux-solo.conf)"
-echo "  2) Playlist       (termux-playlist.conf)"
-echo "  3) Batch file     (edit batchfile.txt → run)"
-echo "  4) Audio only     (termux-audio.conf)"
+echo "  1) Video + Audio (MKV)  (termux-solo.conf)"
+echo "  2) Playlist             (termux-playlist.conf)"
+echo "  3) Batch file           (edit batchfile.txt → run)"
 echo "  ─────────────────────────────────────────"
-printf "  Select [1-4]: "
+printf "  Select [1-3]: "
 read -r CHOICE
 
 case "$CHOICE" in
@@ -135,15 +132,6 @@ case "$CHOICE" in
         else
             echo "[*] Cancelled."
         fi
-        ;;
-
-    4)
-        printf "  URL: "
-        read -r URL
-        [[ -z "$URL" ]] && echo "[!] No URL entered. Exiting." && exit 1
-        start_server
-        trap stop_server EXIT
-        run_ytdlp "$CONFIG_AUDIO" "$URL"
         ;;
 
     *)

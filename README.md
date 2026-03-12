@@ -344,15 +344,14 @@ After the script completes, it prints a summary of next steps: placing your cook
 ```
   yt-dlp Termux Runner
   ─────────────────────────────────────────
-  1) Single video   (termux-solo.conf)
-  2) Playlist       (termux-playlist.conf)
-  3) Batch file     (edit batchfile.txt → run)
-  4) Audio only     (termux-audio.conf)
+  1) Video + Audio (MKV)  (termux-solo.conf)
+  2) Playlist             (termux-playlist.conf)
+  3) Batch file           (edit batchfile.txt → run)
   ─────────────────────────────────────────
-  Select [1-4]:
+  Select [1-3]:
 ```
 
-Selecting **option 3** opens `batchfile.txt` in `nano`. Add one URL per line, save with `Ctrl+O`, exit with `Ctrl+X`. The script counts non-empty lines and asks for confirmation before starting the server and running the batch.
+Option 1 downloads a single video with audio merged into MKV using `termux-solo.conf` — the full VP9.2 + opus format selection with all metadata, thumbnails, and chapters embedded. Option 2 does the same for full playlists using `termux-playlist.conf`. Selecting **option 3** opens `batchfile.txt` in `nano`. Add one URL per line, save with `Ctrl+O`, exit with `Ctrl+X`. The script counts non-empty lines and asks for confirmation before starting the server and running the batch.
 
 **Direct URL mode (bypasses menu):**
 
@@ -397,15 +396,13 @@ curl http://127.0.0.1:4416
 
 ## 14. Config Variants
 
-Three config files are provided under `config/`. Each is purpose-built for a specific download mode and shares the same POT provider, JS runtime, and error-handling settings as the base config.
+Two additional config files are provided under `config/` alongside `termux-solo.conf`. Each shares the same POT provider, JS runtime, and error-handling settings as the base config but is purpose-built for a specific download mode.
 
-**`termux-solo.conf`** — Single video downloads. `--no-playlist` is active. Output is nested under `%(channel)s/%(title)s/`. This is the default config used by `ytdlp-run.sh` in direct URL mode and menu option 1.
+**`termux-solo.conf`** — Single video downloads. `--no-playlist` is active. Video and audio are merged into MKV using VP9.2 + opus. Output is nested under `%(channel)s/%(title)s/` with full metadata, thumbnails, and chapters embedded. This is the default config used by `ytdlp-run.sh` in direct URL mode and menu option 1.
 
-**`termux-playlist.conf`** — Full playlist or channel downloads. `--yes-playlist` is active. Output is nested under `%(channel)s/%(playlist)s/` with zero-padded index prefixes (`001.`, `002.`, ...). Uncomment `--playlist-items 1-50` in the file to restrict the range.
+**`termux-playlist.conf`** — Full playlist or channel downloads. `--yes-playlist` is active. Output is nested under `%(channel)s/%(playlist)s/` with zero-padded index prefixes (`001.`, `002.`, ...). Uncomment `--playlist-items 1-50` in the file to restrict the download range.
 
-**`termux-audio.conf`** — Audio-only downloads. Targets native `opus` streams directly — no transcoding or ffmpeg extraction required. Output is scoped to an `Audio/` subfolder with a simplified filename template that omits resolution and fps fields.
-
-Each config can be invoked manually with `--config-location` or selected automatically through the `ytdlp-run.sh` menu:
+Each config can be invoked manually with `--config-location` or selected through the `ytdlp-run.sh` menu:
 
 ```bash
 yt-dlp --config-location ~/storage/shared/Github/config/termux-playlist.conf "PLAYLIST_URL"
