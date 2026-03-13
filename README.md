@@ -108,7 +108,7 @@ The installer runs 13 sequential stages. Every stage is idempotent — re-runnin
 | `YTDLPT_MIN_FREE_MB` | `2048` | Minimum free storage before download (MB) |
 | `YTDLPT_MAX_RETRIES` | `3` | yt-dlp retry attempts on network error |
 | `YTDLPT_RETRY_SLEEP` | `5` | Seconds between retries |
-| `YTDLPT_BRANCH` | `main` | Repo branch used during curl-pipe install |
+| `YTDLPT_BRANCH` | `master` | Repo branch used during curl-pipe install |
 
 ---
 
@@ -213,6 +213,17 @@ Maintained by the [Termux team](https://github.com/termux).
 
 - Repository: [https://github.com/termux/proot-distro](https://github.com/termux/proot-distro)
 - License: [GPL-3.0](https://github.com/termux/proot-distro/blob/master/LICENSE)
+
+---
+
+### termux-url-opener
+
+> The share-menu integration pattern that inspired the `termux-url-opener` implementation in this project.
+
+Authored by [kairusds](https://github.com/kairusds). A `termux-url-opener` script with yt-dlp that demonstrated the Android share-menu → Termux download workflow — sharing a URL directly from any app into Termux for immediate download.
+
+- Repository: [https://github.com/kairusds/termux-url-opener](https://github.com/kairusds/termux-url-opener)
+- License: MIT License
 
 ---
 
