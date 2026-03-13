@@ -16,7 +16,7 @@ automated server lifecycle management, and a menu-driven launcher.
 curl -L https://raw.githubusercontent.com/raldisk/yt-dlp-termux/v2.0.1/install.sh | bash
 
 # Latest development
-curl -L https://raw.githubusercontent.com/raldisk/yt-dlp-termux/main/install.sh | bash
+curl -L https://raw.githubusercontent.com/raldisk/yt-dlp-termux/master/install.sh | bash
 ```
 
 The installer detects when it is piped through bash, clones the repo automatically,

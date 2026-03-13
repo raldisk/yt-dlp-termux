@@ -19,7 +19,7 @@ set -euo pipefail
 # resolves to the user's CWD, not the repo. Detect the pipe case, clone the
 # repo, then exec a proper file execution so BASH_SOURCE[0] is populated.
 REPO_URL="https://github.com/raldisk/yt-dlp-termux.git"
-REPO_BRANCH="${YTDLPT_BRANCH:-main}"
+REPO_BRANCH="${YTDLPT_BRANCH:-master}"
 CLONE_DIR="${HOME}/storage/shared/Github/yt-dlp-termux"
 
 if [[ -z "${BASH_SOURCE[0]:-}" ]] || [[ "${BASH_SOURCE[0]}" == "bash" ]]; then
