@@ -40,6 +40,11 @@
 - Active internet connection.
 - At least **1.5 GB** free storage (Alpine + Node + Deno + dependencies).
 - A YouTube cookies file if downloading age-restricted or logged-in content.
+- If your repo lives on external storage (`~/storage/shared/`), run this once before any `git` operation — it prevents the "dubious ownership" error caused by Android's filesystem UID mismatch:
+
+```bash
+git config --global --add safe.directory '*'
+```
 
 ---
 
@@ -470,6 +475,20 @@ exit
 ---
 
 ## 16. Known Errors and Fixes
+
+### `fatal: detected dubious ownership in repository`
+**Cause:** Git 2.35.2+ refuses any operation (`pull`, `push`, `status`, `log`) in directories where the filesystem-reported owner UID does not match the running process. On Android, `/storage/emulated/0/` is managed by MediaProvider under a separate system UID — so every git operation on a repo stored in external storage triggers this error, even for repos you created yourself.
+**Fix:** Run once — it persists in your global `.gitconfig`:
+```bash
+# Single path
+git config --global --add safe.directory '/storage/emulated/0/Github/yt-dlp-termux'
+
+# All repos on external storage (recommended for personal devices)
+git config --global --add safe.directory '*'
+```
+After running either command, all git operations will proceed normally.
+
+---
 
 ### `bash: cd: /storage/emulated/0/Github: Permission denied`
 **Cause:** Direct access to `/storage/emulated/0/` is blocked by Android's sandbox.
